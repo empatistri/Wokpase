@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wokpase"
+version = "0.1.0"
+description = "A keyboard-driven AI coding workspace for the terminal"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.80,<2",
+    "tomli>=2; python_version<'3.11'",
+]
+
+[project.scripts]
+wokpase = "wokpase.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
