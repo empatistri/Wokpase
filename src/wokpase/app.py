@@ -10,7 +10,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Input, RichLog, Static, TextArea, Tree
 
 from wokpase.config import AppConfig
@@ -179,15 +179,20 @@ class WokpaseApp(App[None]):
         self.query_one("#command", Input).focus()
 
     def _log(self, message: str) -> None:
-        self.query_one("#logs", RichLog).write(message)
+        self._workspace_screen().query_one("#logs", RichLog).write(message)
 
     def _update_status(self) -> None:
         filename = str(self.active_file.relative_to(self.workspace)) if self.active_file else "[No file]"
         state = "Working" if self.ai_working else "Idle"
-        self.query_one("#status", Static).update(f" {filename}  |  AI: {state}  |  Ctrl+S Save  Ctrl+K AI")
+        self._workspace_screen().query_one("#status", Static).update(
+            f" {filename}  |  AI: {state}  |  Ctrl+S Save  Ctrl+K AI"
+        )
+
+    def _workspace_screen(self) -> Screen:
+        return self.screen_stack[0]
 
     def refresh_tree(self) -> None:
-        tree = self.query_one("#file-tree", Tree)
+        tree = self._workspace_screen().query_one("#file-tree", Tree)
         tree.clear()
         tree.root.set_label(self.workspace.name)
         tree.root.data = self.workspace
@@ -224,7 +229,7 @@ class WokpaseApp(App[None]):
             self._log(f"[Error] {error}")
             return
         self.active_file = path
-        editor = self.query_one("#editor", TextArea)
+        editor = self._workspace_screen().query_one("#editor", TextArea)
         editor.language = LANGUAGES.get(path.suffix.lower())
         editor.load_text(content)
         self._update_status()
@@ -236,14 +241,17 @@ class WokpaseApp(App[None]):
             self._log("[Save] Pilih berkas terlebih dahulu.")
             return
         try:
-            self.active_file.write_text(self.query_one("#editor", TextArea).text, encoding="utf-8")
+            self.active_file.write_text(
+                self._workspace_screen().query_one("#editor", TextArea).text,
+                encoding="utf-8",
+            )
         except OSError as error:
             self._log(f"[Save] Gagal: {error}")
             return
         self._log(f"[Save] Tersimpan: {self.active_file.relative_to(self.workspace)}")
 
     def action_ai_edit(self) -> None:
-        command = self.query_one("#command", Input)
+        command = self._workspace_screen().query_one("#command", Input)
         command.value = ":ai "
         command.focus()
 
@@ -369,7 +377,7 @@ class WokpaseApp(App[None]):
         self.ai_working = True
         self._update_status()
         self._log(f"[{self.config.executor.provider}] Mengedit {path.relative_to(self.workspace)}...")
-        original = self.query_one("#editor", TextArea).text
+        original = self._workspace_screen().query_one("#editor", TextArea).text
         prompt = (
             "You are a careful coding assistant. Return ONLY valid JSON in this exact shape: "
             '{"files":[{"path":"relative/path","content":"complete file content"}]}. '

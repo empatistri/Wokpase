@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wokpase.app import WokpaseApp
+from wokpase.app import DiffScreen, WokpaseApp
 from wokpase.config import AgentConfig, AppConfig
 from wokpase.providers import AIRequestError, generate
 from wokpase.workspace import parse_file_response, safe_path
@@ -174,3 +174,30 @@ def test_ai_diff_requires_acceptance(tmp_path: Path, key: str, accepted: bool) -
                 assert target.read_text(encoding="utf-8") == "print('generated')\n"
 
     asyncio.run(exercise_diff())
+
+
+def test_ai_edit_updates_status_while_diff_screen_is_open(tmp_path: Path) -> None:
+    source = tmp_path / "hello.py"
+    source.write_text("", encoding="utf-8")
+    app = WokpaseApp(tmp_path)
+
+    async def exercise_ai_edit() -> None:
+        with patch(
+            "wokpase.app.generate",
+            return_value='{"files":[{"path":"hello.py","content":"print(1)\\n"}]}',
+        ):
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                app.open_file(source)
+                app.edit_with_ai("add print")
+                await pilot.pause(0.2)
+
+                assert isinstance(app.screen, DiffScreen)
+                status = app.screen_stack[0].query_one("#status")
+                assert "AI: Idle" in str(status.render())
+
+                await pilot.press("y")
+                await pilot.pause()
+                assert source.read_text(encoding="utf-8") == "print(1)\n"
+
+    asyncio.run(exercise_ai_edit())
