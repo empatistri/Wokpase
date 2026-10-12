@@ -1,9 +1,12 @@
 import asyncio
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from wokpase.app import WokpaseApp
+from wokpase.config import AgentConfig, AppConfig
+from wokpase.providers import AIRequestError, generate
 from wokpase.workspace import parse_file_response, safe_path
 
 
@@ -14,6 +17,45 @@ def test_safe_path_keeps_paths_inside_workspace(tmp_path: Path) -> None:
 def test_safe_path_rejects_traversal(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="di luar workspace"):
         safe_path(tmp_path, "../outside.txt")
+
+
+def test_openrouter_free_model_uses_free_router(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WOKPASE_OPENROUTER_KEY", "test-key")
+    response = {"choices": [{"message": {"content": "Hello"}}]}
+    with patch("wokpase.providers._post_json", return_value=response) as post_json:
+        result = generate(
+            AppConfig(AgentConfig("openrouter", "openrouter/free"),
+                      AgentConfig("openrouter", "openrouter/free")),
+            AgentConfig("openrouter", "openrouter/free"),
+            "test prompt",
+        )
+
+    assert result == "Hello"
+    args, kwargs = post_json.call_args
+    assert args[0] == "https://openrouter.ai/api/v1/chat/completions"
+    assert args[1]["model"] == "openrouter/free"
+    assert args[2] == {"Authorization": "Bearer test-key"}
+
+
+def test_openrouter_rejects_paid_model_before_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WOKPASE_OPENROUTER_KEY", "test-key")
+    agent = AgentConfig("openrouter", "anthropic/claude-sonnet")
+    config = AppConfig(agent, agent)
+    with patch("wokpase.providers._post_json") as post_json:
+        with pytest.raises(AIRequestError, match="hanya menerima model gratis"):
+            generate(config, agent, "test prompt")
+    post_json.assert_not_called()
+
+
+def test_openrouter_accepts_explicit_free_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WOKPASE_OPENROUTER_KEY", "test-key")
+    response = {"choices": [{"message": {"content": "Free response"}}]}
+    agent = AgentConfig("openrouter", "meta-llama/llama-3.2-3b-instruct:free")
+    with patch("wokpase.providers._post_json", return_value=response) as post_json:
+        assert generate(AppConfig(agent, agent), agent, "prompt") == "Free response"
+    assert post_json.call_args.args[1]["model"].endswith(":free")
 
 
 def test_parse_file_response_accepts_json_and_markdown_fence() -> None:

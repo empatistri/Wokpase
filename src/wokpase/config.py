@@ -49,6 +49,7 @@ class AppConfig:
         env_names = {
             "gemini": "WOKPASE_GEMINI_KEY",
             "groq": "WOKPASE_GROQ_KEY",
+            "openrouter": "WOKPASE_OPENROUTER_KEY",
         }
         if provider not in env_names:
             raise ValueError(f"provider tidak didukung: {provider}")

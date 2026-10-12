@@ -13,6 +13,14 @@ class AIRequestError(RuntimeError):
 
 
 def generate(config: AppConfig, agent: AgentConfig, prompt: str) -> str:
+    if agent.provider == "openrouter":
+        if agent.model != "openrouter/free" and not agent.model.endswith(":free"):
+            raise AIRequestError(
+                "provider OpenRouter hanya menerima model gratis "
+                "'openrouter/free' atau model dengan akhiran ':free'"
+            )
+        key = config.api_key(agent.provider)
+        return _generate_openrouter(agent.model, key, prompt)
     key = config.api_key(agent.provider)
     if agent.provider == "gemini":
         return _generate_gemini(agent.model, key, prompt)
@@ -72,3 +80,22 @@ def _generate_groq(model: str, key: str, prompt: str) -> str:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as error:
         raise AIRequestError("respons Groq tidak berisi teks") from error
+
+
+def _generate_openrouter(model: str, key: str, prompt: str) -> str:
+    result = _post_json(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+        },
+        {"Authorization": f"Bearer {key}"},
+    )
+    try:
+        content = result["choices"][0]["message"]["content"]
+        if not isinstance(content, str) or not content:
+            raise AIRequestError("respons OpenRouter tidak berisi teks")
+        return content
+    except (KeyError, IndexError, TypeError) as error:
+        raise AIRequestError("respons OpenRouter tidak berisi teks") from error

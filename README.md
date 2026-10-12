@@ -21,20 +21,31 @@ Kunci provider diberikan lewat environment variable:
 ```sh
 export WOKPASE_GEMINI_KEY="..."
 export WOKPASE_GROQ_KEY="..."
+export WOKPASE_OPENROUTER_KEY="..."
 ```
 
-Secara default Gemini merencanakan proyek dan Groq menghasilkan kode. Profil
-provider/model dapat diubah di `~/.config/wokpase/config.toml`:
+Secara default Gemini merencanakan proyek dan Groq menghasilkan kode. Untuk
+menggunakan OpenRouter Free Models Router pada kedua agen, buat API key
+OpenRouter lalu pilih `openrouter/free` di `~/.config/wokpase/config.toml`:
 
 ```toml
 [agents.planner]
-provider = "gemini"
-model = "gemini-2.0-flash"
+provider = "openrouter"
+model = "openrouter/free"
 
 [agents.executor]
-provider = "groq"
-model = "llama-3.3-70b-versatile"
+provider = "openrouter"
+model = "openrouter/free"
 ```
+
+OpenRouter juga menerima ID model gratis yang berakhiran `:free`; aplikasi
+menolak model OpenRouter lain agar konfigurasi ini tidak memilih model berbayar.
+Model gratis memiliki batas penggunaan dan ketersediaan yang dapat berubah.
+Gemini dan Groq tetap tersedia melalui free tier masing-masing.
+Lihat [OpenRouter Free Models](https://openrouter.ai/docs/cookbook/get-started/free-models-router-playground),
+[model gratis](https://openrouter.ai/docs/guides/routing/model-variants/free),
+[harga Gemini](https://ai.google.dev/gemini-api/docs/pricing), dan
+[batas Groq](https://console.groq.com/docs/rate-limits).
 
 ## Perintah
 
