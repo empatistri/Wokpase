@@ -53,6 +53,68 @@ def test_tui_starts_and_opens_workspace_file(tmp_path: Path) -> None:
     asyncio.run(exercise_app())
 
 
+def test_new_file_and_folder_commands_update_tree(tmp_path: Path) -> None:
+    app = WokpaseApp(tmp_path)
+
+    async def exercise_commands() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._dispatch(":folder src/components")
+            app._dispatch(":file src/components/Header.py")
+            await pilot.pause()
+
+            new_file = tmp_path / "src/components/Header.py"
+            assert new_file.is_file()
+            assert app.query_one("#editor").text == ""
+            assert app.active_file == new_file
+
+            tree = app.query_one("#file-tree")
+            src_node = next(node for node in tree.root.children if str(node.label) == "src")
+            components_node = next(
+                node for node in src_node.children if str(node.label) == "components"
+            )
+            assert any(str(node.label) == "Header.py" for node in components_node.children)
+
+    asyncio.run(exercise_commands())
+
+
+@pytest.mark.parametrize(
+    "command, expected_path",
+    [
+        (":flie src/main.py", "src/main.py"),
+        (":foler src/components", "src/components"),
+    ],
+)
+def test_command_autocorrect_keeps_arguments(
+    tmp_path: Path, command: str, expected_path: str
+) -> None:
+    app = WokpaseApp(tmp_path)
+
+    async def exercise_autocorrect() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._dispatch(command)
+            await pilot.pause()
+            assert (tmp_path / expected_path).exists()
+
+    asyncio.run(exercise_autocorrect())
+
+
+@pytest.mark.parametrize("command", [":file", ":folder"])
+def test_create_commands_reject_workspace_escape(tmp_path: Path, command: str) -> None:
+    app = WokpaseApp(tmp_path)
+    outside = tmp_path.parent / "outside-wokpase-test"
+
+    async def exercise_command() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._dispatch(f"{command} ../outside-wokpase-test")
+            await pilot.pause()
+            assert not outside.exists()
+
+    asyncio.run(exercise_command())
+
+
 @pytest.mark.parametrize("key, accepted", [("y", True), ("n", False)])
 def test_ai_diff_requires_acceptance(tmp_path: Path, key: str, accepted: bool) -> None:
     target = tmp_path / "new.py"

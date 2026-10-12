@@ -44,6 +44,34 @@ LANGUAGES = {
     ".yaml": "yaml",
     ".yml": "yaml",
 }
+COMMANDS = (":help", ":open", ":file", ":folder", ":save", ":run", ":ai", ":create-project")
+
+
+def _edit_distance(left: str, right: str) -> int:
+    distances = [[0] * (len(right) + 1) for _ in range(len(left) + 1)]
+    for left_index in range(len(left) + 1):
+        distances[left_index][0] = left_index
+    for right_index in range(len(right) + 1):
+        distances[0][right_index] = right_index
+    for left_index in range(1, len(left) + 1):
+        for right_index in range(1, len(right) + 1):
+            distances[left_index][right_index] = min(
+                min(
+                    distances[left_index][right_index - 1] + 1,
+                    distances[left_index - 1][right_index] + 1,
+                    distances[left_index - 1][right_index - 1]
+                    + (left[left_index - 1] != right[right_index - 1]),
+                ),
+                distances[left_index - 2][right_index - 2] + 1
+                if (
+                    left_index > 1
+                    and right_index > 1
+                    and left[left_index - 1] == right[right_index - 2]
+                    and left[left_index - 2] == right[right_index - 1]
+                )
+                else len(left) + len(right),
+            )
+    return distances[-1][-1]
 
 
 class DiffScreen(ModalScreen[bool]):
@@ -227,16 +255,35 @@ class WokpaseApp(App[None]):
 
     def _dispatch(self, command: str) -> None:
         name, _, argument = command.partition(" ")
+        argument = argument.lstrip()
+        if name.startswith(":") and name not in COMMANDS:
+            distances = {candidate: _edit_distance(name, candidate) for candidate in COMMANDS}
+            nearest_distance = min(distances.values())
+            threshold = min(2, max(1, len(name) // 4))
+            nearest = [
+                candidate
+                for candidate, distance in distances.items()
+                if distance == nearest_distance
+            ]
+            if nearest_distance <= threshold and len(nearest) == 1:
+                corrected = nearest[0]
+                self._log(f"[Command] Autocorrect: {name} → {corrected}")
+                self._dispatch(f"{corrected} {argument}" if argument else corrected)
+                return
         if name == ":help":
             self._log(
-                "[Help] :open PATH | :save | :run COMMAND | :ai INSTRUCTION | "
-                ":create-project DESCRIPTION | :help"
+                "[Help] :open PATH | :file PATH | :folder PATH | :save | "
+                ":run COMMAND | :ai INSTRUCTION | :create-project DESCRIPTION | :help"
             )
         elif name == ":open":
             try:
                 self.open_file(safe_path(self.workspace, argument))
             except ValueError as error:
                 self._log(f"[Open] {error}")
+        elif name in {":file", ":new-file"}:
+            self.create_file(argument)
+        elif name in {":folder", ":new-folder"}:
+            self.create_folder(argument)
         elif name == ":save":
             self.action_save_file()
         elif name == ":run":
@@ -259,6 +306,39 @@ class WokpaseApp(App[None]):
         else:
             self._log(f"[Command] Perintah tidak dikenal: {name}. Ketik :help.")
 
+    def create_file(self, relative_path: str) -> None:
+        if not relative_path:
+            self._log("[File] Gunakan :file PATH")
+            return
+        try:
+            path = safe_path(self.workspace, relative_path)
+            if path == self.workspace:
+                raise ValueError("path harus menunjuk ke berkas di dalam workspace")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("x", encoding="utf-8"):
+                pass
+        except (OSError, ValueError) as error:
+            self._log(f"[File] Gagal membuat {relative_path}: {error}")
+            return
+        self.refresh_tree()
+        self.open_file(path)
+        self._log(f"[File] Dibuat: {path.relative_to(self.workspace)}")
+
+    def create_folder(self, relative_path: str) -> None:
+        if not relative_path:
+            self._log("[Folder] Gunakan :folder PATH")
+            return
+        try:
+            path = safe_path(self.workspace, relative_path)
+            if path == self.workspace:
+                raise ValueError("path harus menunjuk ke folder di dalam workspace")
+            path.mkdir(parents=True, exist_ok=False)
+        except (OSError, ValueError) as error:
+            self._log(f"[Folder] Gagal membuat {relative_path}: {error}")
+            return
+        self.refresh_tree()
+        self._log(f"[Folder] Dibuat: {path.relative_to(self.workspace)}")
+
     @work(exclusive=True)
     async def run_shell(self, command: str) -> None:
         self._log(f"$ {command}")
@@ -278,6 +358,8 @@ class WokpaseApp(App[None]):
             self._log("[Shell] Perintah dihentikan setelah batas 120 detik.")
         except OSError as error:
             self._log(f"[Shell] Gagal menjalankan perintah: {error}")
+        finally:
+            self.refresh_tree()
 
     @work(exclusive=True)
     async def edit_with_ai(self, instruction: str) -> None:
