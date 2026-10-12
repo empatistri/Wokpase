@@ -46,6 +46,8 @@ Lihat [OpenRouter Free Models](https://openrouter.ai/docs/cookbook/get-started/f
 [model gratis](https://openrouter.ai/docs/guides/routing/model-variants/free),
 [harga Gemini](https://ai.google.dev/gemini-api/docs/pricing), dan
 [batas Groq](https://console.groq.com/docs/rate-limits).
+Jika respons pembuatan kode bukan JSON valid, Wokpase mencoba meminta format
+ulang satu kali; percobaan itu dapat memakai kuota API tambahan.
 
 ## Perintah
 

@@ -7,7 +7,11 @@ import pytest
 from wokpase.app import DiffScreen, WokpaseApp
 from wokpase.config import AgentConfig, AppConfig
 from wokpase.providers import AIRequestError, generate
-from wokpase.workspace import parse_file_response, safe_path
+from wokpase.workspace import (
+    FileResponseSyntaxError,
+    parse_file_response,
+    safe_path,
+)
 
 
 def test_safe_path_keeps_paths_inside_workspace(tmp_path: Path) -> None:
@@ -61,6 +65,23 @@ def test_openrouter_accepts_explicit_free_model(monkeypatch: pytest.MonkeyPatch)
 def test_parse_file_response_accepts_json_and_markdown_fence() -> None:
     response = '```json\n{"files":[{"path":"hello.py","content":"print(1)"}]}\n```'
     assert parse_file_response(response) == {"hello.py": "print(1)"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        'Here is the result:\n{"files":[{"path":"hello.py","content":"print(1)"}]}\nDone.',
+        '```json\n{"files":[{"path":"hello.py","content":"print(1)"}]}\n```',
+        '\ufeff{"files":[{"path":"hello.py","content":"print(1)"}]}',
+    ],
+)
+def test_parse_file_response_extracts_wrapped_json(response: str) -> None:
+    assert parse_file_response(response) == {"hello.py": "print(1)"}
+
+
+def test_parse_file_response_identifies_malformed_json() -> None:
+    with pytest.raises(FileResponseSyntaxError, match="bukan JSON valid"):
+        parse_file_response('{"files":[{"path":"hello.py","content":"unterminated}]}')
 
 
 @pytest.mark.parametrize(
@@ -201,3 +222,31 @@ def test_ai_edit_updates_status_while_diff_screen_is_open(tmp_path: Path) -> Non
                 assert source.read_text(encoding="utf-8") == "print(1)\n"
 
     asyncio.run(exercise_ai_edit())
+
+
+def test_ai_edit_retries_malformed_json_once(tmp_path: Path) -> None:
+    source = tmp_path / "hello.py"
+    source.write_text("", encoding="utf-8")
+    app = WokpaseApp(tmp_path)
+
+    async def exercise_retry() -> None:
+        with patch(
+            "wokpase.app.generate",
+            side_effect=[
+                "I will generate your file now.",
+                '{"files":[{"path":"hello.py","content":"print(2)\\n"}]}',
+            ],
+        ) as mocked_generate:
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                app.open_file(source)
+                app.edit_with_ai("add print")
+                await pilot.pause(0.3)
+
+                assert mocked_generate.call_count == 2
+                assert isinstance(app.screen, DiffScreen)
+                await pilot.press("y")
+                await pilot.pause()
+                assert source.read_text(encoding="utf-8") == "print(2)\n"
+
+    asyncio.run(exercise_retry())
